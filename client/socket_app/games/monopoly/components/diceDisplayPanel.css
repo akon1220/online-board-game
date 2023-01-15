@@ -1,0 +1,11 @@
+.rotate-anime {
+  animation: rotate-anime 10ms linear infinite;
+}
+@keyframes rotate-anime {
+  0% {
+    transform: rotate(0);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}

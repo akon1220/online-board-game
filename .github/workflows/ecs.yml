@@ -1,0 +1,83 @@
+name: Build image and Deploy to ECS
+
+on: deployment
+
+jobs:
+  setup-build-publish-deploy:
+    name: Setup, Build, Publish, and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR (production)
+        if: github.event.deployment.environment == 'production'
+        uses: whoan/docker-build-with-cache-action@v5
+        with:
+          username: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          image_name: playground-wiki
+
+      - name: Build, tag, and push image to Amazon ECR (staging)
+        if: github.event.deployment.environment != 'production'
+        uses: whoan/docker-build-with-cache-action@v5
+        with:
+          username: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          password: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          registry: ${{ steps.login-ecr.outputs.registry }}
+          image_name: playground-wiki-staging
+
+      - name: Render Amazon ECS task definition (production)
+        if: github.event.deployment.environment == 'production'
+        id: render-container
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: aws/task-def.json
+          container-name: playground-wiki-app-container
+          image: '${{ steps.login-ecr.outputs.registry }}/playground-wiki:latest'
+
+      - name: Render Amazon ECS task definition (staging)
+        if: github.event.deployment.environment != 'production'
+        id: render-container-staging
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: aws/task-def.json
+          container-name: playground-wiki-app-container
+          image: '${{ steps.login-ecr.outputs.registry }}/playground-wiki-staging:latest'
+
+      - name: Deploy to Amazon ECS service (production)
+        if: github.event.deployment.environment == 'production'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-container.outputs.task-definition }}
+          service: playground-wiki-app-service
+          cluster: playground-wiki-app-cluster
+
+      - name: Deploy to Amazon ECS service (staging)
+        if: github.event.deployment.environment != 'production'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-container-staging.outputs.task-definition }}
+          service: playground-wiki-app-service-staging
+          cluster: playground-wiki-app-cluster-staging
+
+      - name: Update deploy status
+        if: always()
+        uses: unacast/actions-github-deployment-status@0.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          status: ${{ job.status }}
+          description: 'Deployment succeeded!!!'

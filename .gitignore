@@ -1,0 +1,8 @@
+/node_modules/
+/public/*
+!/public/assets/
+!/public/fonts/
+/server/dist/*
+.vscode/
+/coverage/
+!.gitkeep
